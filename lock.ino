@@ -6,8 +6,8 @@
 
 Servo servo;
 WiFiServer server(80);
-const char* ssid = "meinwifi2";
-const char* password = "happybanana636";
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
 int ledPin = 13; // GPIO13
 int CASEOPEN = 180;
 int CASECLOSE = 10;
