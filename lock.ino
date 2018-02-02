@@ -6,8 +6,8 @@
 
 Servo servo;
 WiFiServer server(80);
-const char* ssid = "meinwifi2";
-const char* password = "happybanana636";
+const char* ssid = "SSID";
+const char* password = "PW";
 int ledPin = 13; // GPIO13
 int CASEOPEN = 180;
 int CASECLOSE = 10;
@@ -16,26 +16,33 @@ String Pin;
 
 void setup() {
   Serial.begin(115200);
+  pinMode(ledPin, OUTPUT);
+  server.begin();
+  servo.attach(2);
   EEPROM.begin(512);
   for (int i = 0; i < 4; ++i)
   {
     Pin += char(EEPROM.read(i));
     Serial.print(char(EEPROM.read(i)));
   }
+  if (EEPROM.read(5) == 1) {
+    CASECLOSESTATE = true;
+    digitalWrite(ledPin, HIGH);
+    servo.write(CASECLOSE);
+  } else {
+    CASECLOSESTATE = false;
+    digitalWrite(ledPin, LOW);
+    servo.write(CASEOPEN);
+  }
   Serial.println(Pin);
   Serial.println("\nPIN:" + Pin + "!");
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
+
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("Wifi Started");
-
-  server.begin();
-  servo.attach(2); //D4
-  servo.write(CASECLOSE);
   Serial.print("Use this URL to connect: ");
   Serial.print("http://");
   Serial.print(WiFi.localIP());
@@ -53,9 +60,7 @@ void loop() {
   while (!client.available()) {
     delay(1);
   }
-
   String request = client.readStringUntil('\r');
-
   client.flush();
 
   String value = "";
@@ -71,8 +76,6 @@ void loop() {
     value = setPin(request);
   }
   SendAnswer(client, value);
-  delay(1);
-
 }
 
 void SendAnswer(WiFiClient client, String value) {
@@ -81,10 +84,19 @@ void SendAnswer(WiFiClient client, String value) {
   client.println(""); //  do not forget this one
   client.println("<!DOCTYPE HTML>");
   client.println("<html>");
+  client.println(getStatus());
   client.println(value);
   client.println("<br><br>");
   client.println(getStartPage());
   client.println("</html>");
+}
+
+String getStatus() {
+  if (CASECLOSESTATE) {
+    return ("<h2>Status: Geschlossen!</h2>");
+  } else {
+    return ("<h2>Status: Offen!</h2>");
+  }
 }
 
 String setPin(String request) {
@@ -110,6 +122,10 @@ String getOpenCase() {
 }
 String getCloseCase() {
   CloseCase();
+  CASECLOSESTATE = true;
+  EEPROM.begin(512);
+  EEPROM.write(5, "1");
+  EEPROM.commit();
   return "Case Closed";
 }
 String getChangePin() {
@@ -122,6 +138,10 @@ String openCase(String request) {
   String PinToCheck = splitGetSecond("=", splitGetFirst(" ", splitGetSecond("?", request)));
   if (checkPin(PinToCheck)) {
     OpenCase();
+    CASECLOSESTATE = false;
+    EEPROM.begin(512);
+    EEPROM.write(5, "0");
+    EEPROM.commit();
     return "OK!";
   } else {
     return "falscher PIN!";
