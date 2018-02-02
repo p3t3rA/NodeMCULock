@@ -6,13 +6,13 @@
 
 Servo servo;
 WiFiServer server(80);
-const char* ssid = "SSID";
-const char* password = "PASSWORD";
+const char* ssid = "meinwifi2";
+const char* password = "happybanana636";
 int ledPin = 13; // GPIO13
 int CASEOPEN = 180;
 int CASECLOSE = 10;
 bool CASECLOSESTATE = true;
-String Pin = "1234";
+String Pin;
 
 void setup() {
   Serial.begin(115200);
@@ -22,7 +22,7 @@ void setup() {
     Pin += char(EEPROM.read(i));
     Serial.print(char(EEPROM.read(i)));
   }
-
+  Serial.println(Pin);
   Serial.println("\nPIN:" + Pin + "!");
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
@@ -67,6 +67,8 @@ void loop() {
     value = getChangePin();
   } else if (request.indexOf("/open")  != -1) {
     value = openCase(request);
+  } else if (request.indexOf("/newpin")  != -1) {
+    value = setPin(request);
   }
   SendAnswer(client, value);
   delay(1);
@@ -85,6 +87,24 @@ void SendAnswer(WiFiClient client, String value) {
   client.println("</html>");
 }
 
+String setPin(String request) {
+  String body = splitGetSecond("?", request);
+  String newpin = splitGetSecond("=", splitGetFirst("&", body));
+  String oldpin = splitGetSecond("=", splitGetSecond("&", splitGetFirst(" ", body)));
+  if (oldpin == Pin ) {
+    EEPROM.begin(512);
+    for (int i = 0; i < newpin.length(); ++i)
+    {
+      EEPROM.write(i, newpin[i]);
+    }
+    EEPROM.commit();
+    Pin = newpin;
+    return "PIN Saved: " + Pin + "!";
+  } else {
+    return "Wrong PIN!";
+  }
+}
+
 String getOpenCase() {
   return ("<form action='/open' method='get'>Enter Pin:<br><input type='text' name='pin'><input type='submit' value='Submit'></form>");
 }
@@ -93,7 +113,7 @@ String getCloseCase() {
   return "Case Closed";
 }
 String getChangePin() {
-  return "Pin";
+  return "<form action='/newpin' method='get'>Enter New Pin:<br><input type='text' name='newpin'><br>Enter Old Pin:<br><input type='text' name='oldpin'><input type='submit' value='Save'></form>";
 }
 String getStartPage() {
   return ("<p>Wilkommen!</p><a href='/OpenCase'><button>Open the Case </button></a></br><a href='/CloseCase'><button>Close the Case </button></a></br><a href='/ChangePin'><button>Change Pin</button></a></br>");
