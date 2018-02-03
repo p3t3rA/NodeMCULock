@@ -6,17 +6,24 @@
 
 Servo servo;
 WiFiServer server(80);
-const char* ssid = "SSID";
-const char* password = "PW";
+const char* ssid = "wifi";
+const char* password = "pass";
 int ledPin = 13; // GPIO13
-int CASEOPEN = 180;
+int CASEOPEN = 100;
 int CASECLOSE = 10;
 bool CASECLOSESTATE = true;
 String Pin;
-
+int timermin = 60;
+bool timeractive = false;
+int timer = 0;
+String randnumber;
+int switchPin = 4;
 void setup() {
+  delay(5); //Condensator need time to load
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
+  pinMode(switchPin, INPUT);
+  
   server.begin();
   servo.attach(2);
   EEPROM.begin(512);
@@ -34,9 +41,16 @@ void setup() {
     digitalWrite(ledPin, LOW);
     servo.write(CASEOPEN);
   }
+  String oldRandNumber = "";
+  for (int i = 0; i < 5; ++i)
+  {
+    oldRandNumber += char(EEPROM.read(i + 6));
+    Serial.print(char(EEPROM.read(i + 6)));
+  }
+  randnumber = oldRandNumber;
   Serial.println(Pin);
   Serial.println("\nPIN:" + Pin + "!");
-
+  Serial.println("Randnumber: " + randnumber);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -52,7 +66,14 @@ void setup() {
 
 void loop() {
   delay(1000);
-  Serial.println("Loop");
+  if (timeractive) {
+    timerHandler();
+  }
+  if (WiFi.status() == 6)
+  {
+    Serial.println("RESET!!!!!!!!!!!!!!!!!!!!!!");
+    ESP.reset();
+  }
   WiFiClient client = server.available();
   if (!client) {
     return;
@@ -67,15 +88,43 @@ void loop() {
   if (request.indexOf("/OpenCase") != -1)  {
     value = getOpenCase();
   } else if (request.indexOf("/CloseCase")  != -1) {
-    value = getCloseCase();
+    if (CASECLOSESTATE) {
+      value = getCloseCase();
+      value = "Already locked!";
+    } else {
+      value = getCloseCase();
+      writeRandomNumber();
+    }
   } else if (request.indexOf("/ChangePin")  != -1) {
     value = getChangePin();
   } else if (request.indexOf("/open")  != -1) {
-    value = openCase(request);
+    if (CASECLOSESTATE) {
+      value = openCase(request);
+    } else {
+      value = openCase(request);
+      value = "Already Open!";      
+    }
+  } else if (request.indexOf("/CloseTime") != -1) {
+    value = closeTime(request);
   } else if (request.indexOf("/newpin")  != -1) {
     value = setPin(request);
   }
   SendAnswer(client, value);
+}
+
+void timerHandler() {
+  if (timermin == 0 ) {
+    timermin = 60;
+    if ( timer > 0 ) {
+      timer--;
+    } else {
+      timeractive = false;
+      OpenCaseDo();
+      CASECLOSESTATE = false;
+    }
+  } else {
+    timermin--;
+  }
 }
 
 void SendAnswer(WiFiClient client, String value) {
@@ -88,7 +137,17 @@ void SendAnswer(WiFiClient client, String value) {
   client.println(value);
   client.println("<br><br>");
   client.println(getStartPage());
+  if (digitalRead(switchPin)) {
+    client.println("<br>Deckel ist Offen!");
+  } else {
+    client.println("<br>Deckel ist geschlossen!");
+  }
+  client.println("<p>Zufallsnummer des letzten Zuschlusses: '" + randnumber + "'. Wird nur bei Verschluss gewechselt!");
   client.println("</html>");
+}
+
+String closeTime(String request) {
+  return request;
 }
 
 String getStatus() {
@@ -118,29 +177,29 @@ String setPin(String request) {
 }
 
 String getOpenCase() {
-  return ("<form action='/open' method='get'>Enter Pin:<br><input type='text' name='pin'><input type='submit' value='Submit'></form>");
+  return ("<form action='/open' method='get'>Pin eingeben:<br><input type='text' name='pin'><input type='submit' value='Submit'></form>");
 }
 String getCloseCase() {
   CloseCase();
   CASECLOSESTATE = true;
   EEPROM.begin(512);
-  EEPROM.write(5, "1");
+  EEPROM.write(5, 1);
   EEPROM.commit();
   return "Case Closed";
 }
 String getChangePin() {
-  return "<form action='/newpin' method='get'>Enter New Pin:<br><input type='text' name='newpin'><br>Enter Old Pin:<br><input type='text' name='oldpin'><input type='submit' value='Save'></form>";
+  return "<form action='/newpin' method='get'>Neuen Pin eingeben:<br><input type='text' name='newpin'><br>Alten Pin eingeben:<br><input type='text' name='oldpin'><input type='submit' value='Speichern'></form>";
 }
 String getStartPage() {
-  return ("<p>Wilkommen!</p><a href='/OpenCase'><button>Open the Case </button></a></br><a href='/CloseCase'><button>Close the Case </button></a></br><a href='/ChangePin'><button>Change Pin</button></a></br>");
+  return ("<p>Wilkommen!</p><a href='/OpenCase'><button>Oeffnen</button></a></br><a href='/CloseCase'><button>Schliessen</button><br><a href='/CloseTime'><button>Close for time</button></a>Unfinished!</br><a href='/ChangePin'><button>Pin aendern</button></a></br>");
 }
 String openCase(String request) {
   String PinToCheck = splitGetSecond("=", splitGetFirst(" ", splitGetSecond("?", request)));
   if (checkPin(PinToCheck)) {
-    OpenCase();
+    OpenCaseDo();
     CASECLOSESTATE = false;
     EEPROM.begin(512);
-    EEPROM.write(5, "0");
+    EEPROM.write(5, 0);
     EEPROM.commit();
     return "OK!";
   } else {
@@ -180,15 +239,32 @@ String splitGetSecond(String separator, String input) {
   return value2;
 }
 
-void OpenCase() {
-  digitalWrite(ledPin, LOW);
+void OpenCaseDo() {
   servo.attach(2);
   servo.write(CASEOPEN);
+  servo.write(CASEOPEN);
+  servo.write(CASEOPEN);
+  servo.write(CASEOPEN);
+  delay(500);
+  digitalWrite(ledPin, LOW);
   CASECLOSESTATE = false;
 }
 void CloseCase() {
   digitalWrite(ledPin, HIGH);
   servo.attach(2);
   servo.write(CASECLOSE);
+  delay(500);
   CASECLOSESTATE = true;
+  
 }
+void writeRandomNumber() {
+randnumber = random(10000, 99999);
+  Serial.println(randnumber);
+  EEPROM.begin(512);
+  for (int i = 0; i < randnumber.length(); ++i)
+  {
+    EEPROM.write(i + 6, randnumber[i]);
+  }
+  EEPROM.commit();
+}
+
